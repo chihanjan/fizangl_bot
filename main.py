@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+from aiohttp import web
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -20,7 +21,6 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
 # --- БАЗА ДАННЫХ ВОПРОСОВ ---
-# Используем ваши вопросы и пояснения из main.py[cite: 1]
 quizzes = {
     "mechanics": [
         {"question": "Как называется единица измерения силы в СИ?", "options": ["Ватт", "Ньютон", "Джоуль", "Паскаль"], "correct": 1, "expl": "Ньютон (Н) — единица измерения силы. Названа в честь Исаака Ньютона. 1 Н = 1 кг·м/с²."},
@@ -75,7 +75,7 @@ quizzes = {
 # --- КЛАВИАТУРЫ ---
 
 def get_main_inline_keyboard():
-    """Новое главное меню с Inline-кнопками[cite: 1]"""
+    """Новое главное меню с Inline-кнопками"""
     builder = InlineKeyboardBuilder()
     builder.row(types.InlineKeyboardButton(text="Механика ⚙️", callback_data="start_quiz_mechanics"))
     builder.row(types.InlineKeyboardButton(text="Электричество ⚡️", callback_data="start_quiz_electricity"))
@@ -94,20 +94,20 @@ def get_quiz_keyboard(quiz_type, q_index):
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.answer(
-        "👋 Привет! Выбери раздел физики для начала тестирования:", 
+        "👋 Привет! Выбери раздел физики для начала тестирования:",
         reply_markup=get_main_inline_keyboard()
     )
 
 @dp.callback_query(F.data.startswith("start_quiz_"))
 async def handle_start_quiz(callback: types.CallbackQuery, state: FSMContext):
-    """Начало теста через нажатие Inline-кнопки[cite: 1]"""
+    """Начало теста через нажатие Inline-кнопки"""
     quiz_type = callback.data.replace("start_quiz_", "")
-    titles = {"mechanics": "Механика", "electricity": "Электричество", 
+    titles = {"mechanics": "Механика", "electricity": "Электричество",
               "thermodynamics": "Термодинамика", "optics": "Оптика"}
-    
+
     await state.set_state(QuizState.playing)
     await state.update_data(score=0, quiz_type=quiz_type)
-    
+
     await callback.message.edit_text(
         f"🚀 Раздел: **{titles[quiz_type]}**\n\n**Вопрос 1:**\n{quizzes[quiz_type][0]['question']}",
         reply_markup=get_quiz_keyboard(quiz_type, 0),
@@ -121,7 +121,7 @@ async def check_answer(callback: types.CallbackQuery, state: FSMContext):
     quiz_type, q_idx, a_idx = parts[1], int(parts[2]), int(parts[3])
     data = await state.get_data()
     score = data.get("score", 0)
-    
+
     q_data = quizzes[quiz_type][q_idx]
     if a_idx == q_data["correct"]:
         score += 1
@@ -129,10 +129,10 @@ async def check_answer(callback: types.CallbackQuery, state: FSMContext):
         status = "✅ **Верно!**"
     else:
         status = f"❌ **Неверно.** Правильный ответ: *{q_data['options'][q_data['correct']]}*"
-    
+
     text = f"{status}\n\nℹ️ {q_data['expl']}"
     next_q = q_idx + 1
-    
+
     builder = InlineKeyboardBuilder()
     if next_q < len(quizzes[quiz_type]):
         builder.row(types.InlineKeyboardButton(text="Следующий вопрос ➡️", callback_data=f"next_{quiz_type}_{next_q}"))
@@ -140,10 +140,9 @@ async def check_answer(callback: types.CallbackQuery, state: FSMContext):
     else:
         total = len(quizzes[quiz_type])
         percent = (score / total) * 100
-        
-        # Кнопка возврата в меню после завершения[cite: 1]
+
         builder.row(types.InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_menu"))
-        
+
         await callback.message.edit_text(
             f"{text}\n\n🏁 **Тест завершен!**\n📊 Ваш результат: **{score}/{total}** (**{int(percent)}%**)",
             reply_markup=builder.as_markup(),
@@ -165,14 +164,25 @@ async def show_question(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data == "back_to_menu")
 async def back_to_menu(callback: types.CallbackQuery):
-    """Возврат к выбору разделов[cite: 1]"""
+    """Возврат к выбору разделов"""
     await callback.message.edit_text(
-        "Выбери раздел физики для начала тестирования:", 
+        "Выбери раздел физики для начала тестирования:",
         reply_markup=get_main_inline_keyboard()
     )
     await callback.answer()
 
+async def handle(request):
+    return web.Response(text="Bot is running!")
+
 async def main():
+    app = web.Application()
+    app.router.add_get('/', handle)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 8080))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
